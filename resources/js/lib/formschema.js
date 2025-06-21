@@ -1,10 +1,8 @@
-// First, add Zod to your project dependencies
-// npm install zod
-
-// Create a new file: resources/js/lib/formSchema.js
+// Updated file: resources/js/lib/formschema.js
 import { z } from "zod";
+import { validatePekanbaruLocation } from "./pekanbaruBoundaries";
 
-// Define validation schema using Zod
+// Define validation schema using Zod with Pekanbaru boundary validation
 export const placeSchema = z.object({
   placeName: z
     .string()
@@ -12,7 +10,7 @@ export const placeSchema = z.object({
     .max(255, { message: "Place name must be less than 255 characters" }),
   placeBusinessStatus: z.string().nullable().optional(),
   placeStatus: z.string().min(1, { message: "Status is required" }).max(100, {
-    message: "Source must be less than 50 characters",
+    message: "Status must be less than 100 characters",
   }),
   placeAddress: z.string().nullable().optional(),
   placeDistrict: z.string().nullable().optional(),
@@ -43,6 +41,21 @@ export const placeSchema = z.object({
   source: z.string().min(1, { message: "Source is required" }).max(50, {
     message: "Source must be less than 50 characters",
   }),
+})
+.refine(data => {
+  // Validate that coordinates are within Pekanbaru boundaries
+  const lat = parseFloat(data.placeLatitude);
+  const lng = parseFloat(data.placeLongitude);
+  
+  if (isNaN(lat) || isNaN(lng)) {
+    return true; // Let individual field validation handle this
+  }
+  
+  const validation = validatePekanbaruLocation(lat, lng);
+  return validation.valid;
+}, {
+  message: "Location must be within Pekanbaru city boundaries",
+  path: ["placeLatitude"] // This will show the error on the latitude field
 });
 
 // A utility function to validate form data with Zod
@@ -55,7 +68,15 @@ export function validateForm(data, schema = placeSchema) {
     if (error.errors) {
       error.errors.forEach(err => {
         const field = err.path[0];
-        formattedErrors[field] = err.message;
+        // Handle location validation errors specially
+        if (err.message.includes("Pekanbaru city boundaries")) {
+          const lat = parseFloat(data.placeLatitude);
+          const lng = parseFloat(data.placeLongitude);
+          const locationValidation = validatePekanbaruLocation(lat, lng);
+          formattedErrors[field] = locationValidation.details || err.message;
+        } else {
+          formattedErrors[field] = err.message;
+        }
       });
     }
     return { success: false, data: null, errors: formattedErrors };
@@ -78,4 +99,19 @@ export function mergeValidationErrors(zodErrors, laravelErrors) {
   }
   
   return mergedErrors;
+}
+
+// Additional utility function to validate coordinates specifically for Pekanbaru
+export function validateCoordinatesForPekanbaru(lat, lng) {
+  const numLat = parseFloat(lat);
+  const numLng = parseFloat(lng);
+  
+  if (isNaN(numLat) || isNaN(numLng)) {
+    return {
+      valid: false,
+      error: "Invalid coordinates"
+    };
+  }
+  
+  return validatePekanbaruLocation(numLat, numLng);
 }
